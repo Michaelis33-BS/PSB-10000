@@ -1,4 +1,4 @@
-"""Status-register and alarm decoding."""
+"""Status-register, event-register, and alarm-counter access."""
 
 from __future__ import annotations
 
@@ -6,37 +6,102 @@ from .base import Subsystem
 from ..enums import PowerFlow, RegulationMode, RemoteOwner
 from ..exceptions import PSBAlarmError
 from ..models import StatusSnapshot
+from ..util import ensure_range
 
-# EA Questionable-status register.  These assignments are documented by the
-# programming guide register model; bits 10/11/13 and OVP/OT are also shown in
-# the guide's examples.  Bit 9 is presently unused in the older guide.
 _QUESTIONABLE_ALARMS: dict[int, str] = {
     0: "OVP", 1: "OCP", 2: "OPP", 3: "OT", 13: "PF", 14: "MSP",
 }
 _QUESTIONABLE_EVENTS: dict[int, str] = {
     4: "OVD", 5: "UVD", 6: "OCD", 7: "UCD", 8: "OPD",
 }
-# In the second questionable register, bit 0 distinguishes whether an OCP/OPP
-# originated in sink/source operation; it is metadata, not a separate alarm.
-# Bit 2 is the Share-Bus failure alarm (SF).
 _SECONDARY_ALARMS: dict[int, str] = {2: "SF"}
+
+ALARM_COUNTER_COMMANDS: dict[str, str] = {
+    "OVP": "SYSTem:ALARm:COUNt:OVOLtage?",
+    "OT": "SYSTem:ALARm:COUNt:OTEMperature?",
+    "OPP": "SYSTem:ALARm:COUNt:OPOWer?",
+    "OCP": "SYSTem:ALARm:COUNt:OCURrent?",
+    "PF": "SYSTem:ALARm:COUNt:PFAil?",
+    "SF": "SYSTem:ALARm:COUNt:SHARebusfail?",
+    "SINK_OPP": "SYSTem:SINK:ALARm:COUNt:OPOWer?",
+    "SINK_OCP": "SYSTem:SINK:ALARm:COUNt:OCURrent?",
+}
 
 
 class StatusSubsystem(Subsystem):
     def questionable(self) -> int:
-        return self._query_int("STAT:QUES:COND?")
+        return self._query_int("STATus:QUEStionable:CONDition?")
+
+    def questionable_event(self) -> int:
+        return self._query_int("STATus:QUEStionable:EVENt?")
+
+    @property
+    def questionable_enable(self) -> int:
+        return self._query_int("STATus:QUEStionable:ENABle?")
+
+    @questionable_enable.setter
+    def questionable_enable(self, value: int) -> None:
+        value = int(ensure_range(value, 0, 65535, "questionable enable mask"))
+        self._write(f"STATus:QUEStionable:ENABle {value}")
 
     def secondary_questionable(self) -> int:
         try:
-            return self._query_int("STAT:SEC:QUES:COND?")
+            return self._query_int("STATus:SECond:QUEStionable:CONDition?")
         except Exception:
+            # Older/non-10000 firmware can omit this extra register.
             return 0
 
+    def secondary_questionable_event(self) -> int:
+        return self._query_int("STATus:SECond:QUEStionable:EVENt?")
+
+    @property
+    def secondary_questionable_enable(self) -> int:
+        return self._query_int("STATus:SECond:QUEStionable:ENABle?")
+
+    @secondary_questionable_enable.setter
+    def secondary_questionable_enable(self, value: int) -> None:
+        value = int(ensure_range(value, 0, 65535, "secondary questionable enable mask"))
+        self._write(f"STATus:SECond:QUEStionable:ENABle {value}")
+
     def operation(self) -> int:
-        return self._query_int("STAT:OPER:COND?")
+        return self._query_int("STATus:OPERation:CONDition?")
+
+    def operation_event(self) -> int:
+        return self._query_int("STATus:OPERation:EVENt?")
+
+    @property
+    def operation_enable(self) -> int:
+        return self._query_int("STATus:OPERation:ENABle?")
+
+    @operation_enable.setter
+    def operation_enable(self, value: int) -> None:
+        value = int(ensure_range(value, 0, 65535, "operation enable mask"))
+        self._write(f"STATus:OPERation:ENABle {value}")
 
     def status_byte(self) -> int:
         return self._query_int("*STB?")
+
+    def event_status(self) -> int:
+        """Read *ESR?. Reading ESR clears the event-status register."""
+        return self._query_int("*ESR?")
+
+    @property
+    def event_status_enable(self) -> int:
+        return self._query_int("*ESE?")
+
+    @event_status_enable.setter
+    def event_status_enable(self, value: int) -> None:
+        value = int(ensure_range(value, 0, 255, "event status enable mask"))
+        self._write(f"*ESE {value}")
+
+    @property
+    def service_request_enable(self) -> int:
+        return self._query_int("*SRE?")
+
+    @service_request_enable.setter
+    def service_request_enable(self, value: int) -> None:
+        value = int(ensure_range(value, 0, 255, "service request enable mask"))
+        self._write(f"*SRE {value}")
 
     @staticmethod
     def decode_alarms(questionable: int, secondary: int = 0) -> tuple[str, ...]:
@@ -50,7 +115,6 @@ class StatusSubsystem(Subsystem):
 
     @staticmethod
     def _regulation(operation: int) -> RegulationMode:
-        # Operation register: CV/CC/CP/CR are bits 8..11.
         if operation & (1 << 8):
             return RegulationMode.CV
         if operation & (1 << 9):
@@ -63,9 +127,6 @@ class StatusSubsystem(Subsystem):
 
     @staticmethod
     def _flow(operation: int, measurements_current: float | None = None) -> PowerFlow:
-        # On PSB, operation bit 12 indicates source/sink state, but the older
-        # register diagram labels only the combined field.  Signed measurement
-        # data is a more portable discriminator when available.
         if measurements_current is not None:
             if measurements_current < 0:
                 return PowerFlow.SINK
@@ -74,9 +135,8 @@ class StatusSubsystem(Subsystem):
         return PowerFlow.SINK if operation & (1 << 12) else PowerFlow.SOURCE
 
     def snapshot(self, *, include_measurement_for_flow: bool = False) -> StatusSnapshot:
-        # Important ordering: capture alarm/status registers before any call to
-        # SYST:ERR?, because reading the error queue acknowledges alarms whose
-        # cause has gone away.
+        # Capture alarm/status registers before any SYSTem:ERRor? access. EA
+        # documents error-queue reads as alarm acknowledgement for cleared causes.
         q = self.questionable()
         sq = self.secondary_questionable()
         op = self.operation()
@@ -110,24 +170,23 @@ class StatusSubsystem(Subsystem):
             },
         )
 
+    def alarm_counter(self, name: str) -> int:
+        key = name.strip().upper()
+        if key not in ALARM_COUNTER_COMMANDS:
+            raise ValueError(f"unknown alarm counter {name!r}; choose {', '.join(ALARM_COUNTER_COMMANDS)}")
+        return self._query_int(ALARM_COUNTER_COMMANDS[key])
+
     def alarm_counters(self) -> dict[str, int]:
-        """Read power-cycle alarm occurrence counters documented for PSB."""
-        commands = {
-            "OVP": "SYST:ALARM:COUNT:OVOL?",
-            "OT": "SYST:ALARM:COUNT:OTEM?",
-            "OPP": "SYST:ALARM:COUNT:OPOW?",
-            "OCP": "SYST:ALARM:COUNT:OCURR?",
-            "PF": "SYST:ALARM:COUNT:PFAIL?",
-            "SF": "SYST:ALARM:COUNT:SHAREBUSFAIL?",
-            "SINK_OPP": "SYST:SINK:ALARM:COUNT:OPOW?",
-            "SINK_OCP": "SYST:SINK:ALARM:COUNT:OCURR?",
-        }
-        return {name: self._query_int(command) for name, command in commands.items()}
+        """Read all documented PSB power-cycle alarm counters.
+
+        A caller that wants per-command fault isolation should use
+        :meth:`alarm_counter`; this aggregate method intentionally propagates a
+        failed/unsupported query.
+        """
+        return {name: self.alarm_counter(name) for name in ALARM_COUNTER_COMMANDS}
 
     def raise_for_alarms(self) -> None:
         snap = self.snapshot()
-        # Do not classify remote/output/function bits as alarms; decode_alarms
-        # deliberately only returns protection/supervision/alarm bits.
         if snap.active_alarms:
             raise PSBAlarmError(
                 snap.active_alarms,

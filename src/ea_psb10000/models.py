@@ -8,7 +8,7 @@ from typing import Mapping
 from .enums import PowerFlow, RegulationMode, RemoteOwner
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class DeviceInfo:
     manufacturer: str
     model: str
@@ -17,7 +17,7 @@ class DeviceInfo:
     raw_idn: str
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class DeviceRatings:
     voltage: float
     current: float
@@ -26,7 +26,7 @@ class DeviceRatings:
     resistance_max: float | None = None
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class Measurements:
     voltage: float
     current: float
@@ -41,7 +41,7 @@ class Measurements:
         return PowerFlow.IDLE
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class LimitSnapshot:
     voltage_min: float
     voltage_max: float
@@ -55,7 +55,7 @@ class LimitSnapshot:
     sink_resistance_max: float | None
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class ProtectionSnapshot:
     ovp: float
     source_ocp: float
@@ -64,7 +64,7 @@ class ProtectionSnapshot:
     sink_opp: float
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class StatusSnapshot:
     status_byte: int
     questionable: int
@@ -83,7 +83,7 @@ class StatusSnapshot:
         return bool(self.active_alarms)
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class ArbitrarySequence:
     """One EA arbitrary-generator sequence (SCPI indexes 0..7)."""
 

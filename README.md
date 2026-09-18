@@ -1,5 +1,8 @@
 # EA-PSB 10000 Python Driver
 
+> **Python compatibility:** v0.2.1 supports Python **3.8+** and is based directly on the v0.1.1 Python-3.8 driver.
+
+
 Reusable SCPI driver for EA Elektro-Automatik / Tektronix EA-PSB 10000-series
 programmable bidirectional DC power supplies.
 
@@ -24,6 +27,16 @@ single bench script.
 - Function generator support includes arbitrary sequences and PSB XY tables.
 - Instrument-side interface monitoring plus an optional Python heartbeat/watchdog.
 - Optional-interface configuration helpers for Ethernet, RS232/CAN/CANopen/Profibus/Profinet settings documented by EA.
+
+
+## v0.2.1 verification fixes
+
+- Corrects documented communication timeout commands to `SYSTem:COMMunicate:TIMeout` and `SYSTem:COMMunicate:LAN:TIMeout`.
+- Uses documented long-form SCPI spellings for the settings that failed during the PSB-10060-60 checkout (analog reference, user text, ModBus protocol, gateway, controller speed, and related communication fields).
+- Corrects alarm-counter commands and exposes `status.alarm_counter(name)` so one unsupported/failing counter does not hide the others.
+- Adds the complete documented SCPI error-code catalog and explicit `SYSTem:ERRor?`, `NEXT?`, and `ALL?` support.
+- Adds status EVENT/ENABLE register access for broader command verification.
+- Includes `examples/verify_psb_commands.py`, which isolates the SCPI error queue around each test and uses finite-resolution tolerances for power/resistance readback.
 
 ## Install
 

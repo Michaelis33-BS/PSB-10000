@@ -10,9 +10,9 @@ def test_alarm_decode_and_status_bits():
         "SYST:NOM:POW?": "1500",
         "SYST:NOM:RES:MIN?": "0.05",
         "SYST:NOM:RES:MAX?": "100",
-        "STAT:QUES:COND?": str((1 << 3) | (1 << 10) | (1 << 11)),
-        "STAT:SEC:QUES:COND?": "0",
-        "STAT:OPER:COND?": str(1 << 8),
+        "STATus:QUEStionable:CONDition?": str((1 << 3) | (1 << 10) | (1 << 11)),
+        "STATus:SECond:QUEStionable:CONDition?": "0",
+        "STATus:OPERation:CONDition?": str(1 << 8),
         "*STB?": "0",
         "SYST:LOCK:OWNER?": "REMOTE",
     }

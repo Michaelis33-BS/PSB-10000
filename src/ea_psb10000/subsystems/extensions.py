@@ -17,7 +17,7 @@ from ..exceptions import PSBUnsupportedFeatureError
 from ..util import ensure_range
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class SettingCommand:
     set_command: str
     query_command: str | None = None

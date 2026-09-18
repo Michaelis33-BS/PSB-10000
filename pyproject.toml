@@ -1,29 +1,6 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=44,<70", "wheel<0.45"]
 build-backend = "setuptools.build_meta"
-
-[project]
-name = "ea-psb10000"
-version = "0.1.0"
-description = "Robust reusable Python SCPI driver for EA-PSB 10000 bidirectional DC power supplies"
-readme = "README.md"
-requires-python = ">=3.10"
-authors = [{name = "OpenAI"}]
-license = {text = "MIT"}
-classifiers = [
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Operating System :: OS Independent",
-]
-
-[project.optional-dependencies]
-serial = ["pyserial>=3.5"]
-dev = ["pytest>=8", "pyserial>=3.5", "ruff>=0.6"]
-
-[tool.setuptools.packages.find]
-where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

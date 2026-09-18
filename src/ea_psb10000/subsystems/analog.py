@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from .base import Subsystem
-from ..util import bool_token
 
 
 class AnalogInterfaceSubsystem(Subsystem):
@@ -14,57 +13,57 @@ class AnalogInterfaceSubsystem(Subsystem):
 
     @property
     def range_volts(self) -> int:
-        return int(float(self._query("SYST:CONF:ANAL:REF?")))
+        return int(float(self._query("SYSTem:CONFig:ANALog:REFerence?")))
 
     @range_volts.setter
     def range_volts(self, value: int) -> None:
         if int(value) not in {5, 10}:
             raise ValueError("analog range must be 5 or 10 V")
-        self._write(f"SYST:CONF:ANAL:REF {int(value)}")
+        self._write(f"SYSTem:CONFig:ANALog:REFerence {int(value)}")
 
     @property
     def monitor_mode(self) -> str:
-        return self._query("SYST:CONF:ANAL:MON?").strip().upper()
+        return self._query("SYSTem:CONFig:ANALog:MONitor?").strip().upper()
 
     @monitor_mode.setter
     def monitor_mode(self, value: str) -> None:
         token = value.upper()
         if token not in self._MONITOR_VALUES:
             raise ValueError(f"monitor_mode must be one of {sorted(self._MONITOR_VALUES)}")
-        self._write(f"SYST:CONF:ANAL:MON {token}")
+        self._write(f"SYSTem:CONFig:ANALog:MONitor {token}")
 
     def set_pin6(self, value: str) -> None:
         token = value.upper()
         if token not in self._PIN6:
             raise ValueError(f"pin6 must be one of {sorted(self._PIN6)}")
-        self._write(f"SYST:CONF:ANAL:PIN6 {token}")
+        self._write(f"SYSTem:CONFig:ANALog:PIN6 {token}")
 
     def set_pin14(self, value: str) -> None:
         token = value.upper()
         if token not in self._PIN14:
             raise ValueError(f"pin14 must be one of {sorted(self._PIN14)}")
-        self._write(f"SYST:CONF:ANAL:PIN14 {token}")
+        self._write(f"SYSTem:CONFig:ANALog:PIN14 {token}")
 
     def set_pin15(self, value: str) -> None:
         token = value.upper()
         if token not in self._PIN15:
             raise ValueError(f"pin15 must be one of {sorted(self._PIN15)}")
-        self._write(f"SYST:CONF:ANAL:PIN15 {token}")
+        self._write(f"SYSTem:CONFig:ANALog:PIN15 {token}")
 
     @property
     def rem_sb_level(self) -> str:
-        return self._query("SYST:CONF:ANAL:REMSB:LEV?").strip().upper()
+        return self._query("SYSTem:CONFig:ANALog:REMSb:LEVel?").strip().upper()
 
     @rem_sb_level.setter
     def rem_sb_level(self, value: str) -> None:
         token = value.upper()
         if token not in {"NORMAL", "INVERTED"}:
             raise ValueError("REM-SB level must be NORMAL or INVERTED")
-        self._write(f"SYST:CONF:ANAL:REMSB:LEV {token}")
+        self._write(f"SYSTem:CONFig:ANALog:REMSb:LEVel {token}")
 
     @property
     def rem_sb_action(self) -> str:
-        return self._query("SYST:CONF:ANAL:REMSB:ACT?").strip().upper()
+        return self._query("SYSTem:CONFig:ANALog:REMSb:ACTion?").strip().upper()
 
     @rem_sb_action.setter
     def rem_sb_action(self, value: str) -> None:
@@ -73,4 +72,4 @@ class AnalogInterfaceSubsystem(Subsystem):
         token = aliases.get(token, token)
         if token not in {"OFF", "AUTO"}:
             raise ValueError("REM-SB action must be OFF or AUTO")
-        self._write(f"SYST:CONF:ANAL:REMSB:ACT {token}")
+        self._write(f"SYSTem:CONFig:ANALog:REMSb:ACTion {token}")

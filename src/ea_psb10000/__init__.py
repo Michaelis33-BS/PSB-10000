@@ -34,7 +34,7 @@ from .models import (
 )
 from .transports import EthernetTransport, SCPITransport, SerialTransport
 
-__version__ = "0.1.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "PSB10000",

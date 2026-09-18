@@ -1,4 +1,4 @@
-"""SCPI error queue handling."""
+"""SCPI error queue handling and documented error-code catalog."""
 
 from __future__ import annotations
 
@@ -8,16 +8,34 @@ from .base import Subsystem
 from ..exceptions import PSBSCPIError, SCPIErrorRecord
 from ..util import parse_scpi_error
 
+# EA 10000/20000-series Programming Guide error list.  Keep this centralized so
+# applications and the hardware verifier can test every documented code without
+# deliberately creating dangerous physical faults.
+KNOWN_SCPI_ERRORS: dict[int, str] = {
+    0: "No error",
+    -100: "Command error",
+    -102: "Syntax error",
+    -108: "Parameter not allowed",
+    -200: "Execution error",
+    -201: "Invalid while in local",
+    -220: "Parameter error",
+    -221: "Settings conflict",
+    -222: "Data out of range",
+    -223: "Too much data",
+    -224: "Illegal parameter value",
+    -225: "Out of memory",
+    -999: "Safety OVP",
+}
+
 
 class ErrorSubsystem(Subsystem):
     def next(self) -> SCPIErrorRecord:
-        """Read/acknowledge the next queue entry.
+        """Read/acknowledge the next queue entry."""
+        return parse_scpi_error(self._query("SYSTem:ERRor?"))
 
-        EA documents that SYST:ERR? also acknowledges device-alarm status bits
-        whose physical cause is no longer present. Capture status first when the
-        alarm history matters.
-        """
-        return parse_scpi_error(self._query("SYST:ERR?"))
+    def next_explicit(self) -> SCPIErrorRecord:
+        """Equivalent documented NEXT query, useful for command coverage tests."""
+        return parse_scpi_error(self._query("SYSTem:ERRor:NEXT?"))
 
     def drain(self, *, max_errors: int = 16) -> list[SCPIErrorRecord]:
         result: list[SCPIErrorRecord] = []
@@ -29,11 +47,10 @@ class ErrorSubsystem(Subsystem):
         return result
 
     def all(self) -> list[SCPIErrorRecord]:
-        """Use SYST:ERR:ALL? and parse its up-to-five returned records."""
-        raw = self._query("SYST:ERR:ALL?").strip()
+        """Use SYSTem:ERRor:ALL? and parse its up-to-five returned records."""
+        raw = self._query("SYSTem:ERRor:ALL?").strip()
         if not raw:
             return []
-        # Responses look like: -100,"Command error", -222,"Data out of range"
         pattern = re.compile(r'(-?\d+)\s*,\s*"([^"]*)"')
         matches = pattern.findall(raw)
         if not matches:
@@ -44,6 +61,10 @@ class ErrorSubsystem(Subsystem):
             for code, msg in matches
             if int(code) != 0
         ]
+
+    @staticmethod
+    def known_errors() -> dict[int, str]:
+        return dict(KNOWN_SCPI_ERRORS)
 
     def raise_if_any(self, *, command: str | None = None) -> None:
         errors = self.drain()

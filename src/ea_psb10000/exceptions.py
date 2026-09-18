@@ -33,7 +33,7 @@ class PSBUnsupportedFeatureError(PSBError, NotImplementedError):
     """The requested feature is not supported by this model/firmware/driver mapping."""
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(frozen=True)
 class SCPIErrorRecord:
     """One entry returned by the instrument SCPI error queue."""
 

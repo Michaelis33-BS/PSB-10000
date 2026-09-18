@@ -93,8 +93,8 @@ def test_verified_controller_speed_and_semi_f47_commands():
     d, t = connected_driver(raise_on_alarm_after_write=False)
     d.system.voltage_controller_speed = "FAST"
     d.system.semi_f47 = True
-    assert "SYST:CONF:CONT:SPE FAST" in t.commands
-    assert "SYST:CONF:SEMIF47 ENABLE" in t.commands
+    assert "SYSTem:CONFig:CONTroller:SPEed FAST" in t.commands
+    assert "SYSTem:CONFig:SEMif47 ENABle" in t.commands
 
 
 def test_interface_watchdog_configuration():
