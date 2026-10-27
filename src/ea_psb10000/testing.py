@@ -1,9 +1,15 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: Deterministic scripted transport for unit tests that do not require connected hardware.
+
 """Small scripted transport useful for unit-testing software built on this driver."""
 
 from __future__ import annotations
 
 from collections import defaultdict, deque
 from collections.abc import Iterable
+from typing import Deque, Dict, List, Optional, Union
 
 from .transports.base import SCPITransport
 from .exceptions import PSBConnectionError
@@ -17,11 +23,11 @@ class ScriptedTransport(SCPITransport):
     defaults; all other unmapped queries raise KeyError.
     """
 
-    def __init__(self, responses: dict[str, str | Iterable[str]] | None = None) -> None:
+    def __init__(self, responses: Optional[Dict[str, Union[str, Iterable[str]]]] = None) -> None:
         super().__init__()
         self._open = False
-        self.commands: list[str] = []
-        self._responses: dict[str, deque[str]] = {}
+        self.commands: List[str] = []
+        self._responses: Dict[str, Deque[str]] = {}
         for key, value in (responses or {}).items():
             if isinstance(value, str):
                 self._responses[key] = deque([value])
@@ -39,20 +45,30 @@ class ScriptedTransport(SCPITransport):
 
     @property
     def is_open(self) -> bool:
+        """Read and return the current is open from the instrument or driver state."""
+
         return self._open
 
     def open(self) -> None:
+        """Perform the open operation."""
+
         self._open = True
 
     def close(self) -> None:
+        """Perform the close operation."""
+
         self._open = False
 
     def write(self, command: str) -> None:
+        """Perform the write operation."""
+
         if not self._open:
             raise PSBConnectionError("scripted transport is closed")
         self.commands.append(command)
 
     def query(self, command: str) -> str:
+        """Perform the query operation."""
+
         if not self._open:
             raise PSBConnectionError("scripted transport is closed")
         self.commands.append(command)

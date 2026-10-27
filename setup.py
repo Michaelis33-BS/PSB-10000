@@ -1,3 +1,8 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: Package build/install metadata for the reusable EA-PSB 10000 driver.
+
 from pathlib import Path
 
 from setuptools import find_packages, setup
@@ -6,11 +11,11 @@ ROOT = Path(__file__).resolve().parent
 
 setup(
     name="ea-psb10000",
-    version="0.2.1",
+    version="0.2.2",
     description="Robust reusable Python SCPI driver for EA-PSB 10000 bidirectional DC power supplies",
     long_description=(ROOT / "README.md").read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
-    author="OpenAI",
+    author="Jeff Michaelis",
     license="MIT",
     package_dir={"": "src"},
     packages=find_packages(where="src"),

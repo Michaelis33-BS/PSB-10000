@@ -1,41 +1,84 @@
-# Installation
+# EA-PSB 10000 Driver Installation
 
-This release supports **Python 3.8 and newer**.
+**Writer:** Jeff Michaelis  
+**Version:** 0.2.2  
+**Python:** 3.8+
 
-## Ubuntu / Linux (recommended)
+## Install the wheel
 
-From the extracted package directory:
+Windows with Python 3.8 explicitly selected:
 
-```bash
-python3 --version
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install --upgrade pip setuptools wheel
-python3 -m pip install -e ".[serial]"
+```bat
+py -3.8 -m pip install ea_psb10000-0.2.2-py3-none-any.whl
 ```
 
-For Ethernet-only use, omit the serial extra:
+Linux:
 
 ```bash
-python3 -m pip install -e .
+python3.8 -m pip install ./ea_psb10000-0.2.2-py3-none-any.whl
 ```
 
-Verify the driver:
+Ethernet operation has no external runtime dependency.
+
+## Serial / USB-COM support
+
+Install `pyserial` into the same interpreter:
 
 ```bash
-python3 -c "from ea_psb10000 import PSB10000; print('EA-PSB driver loaded successfully')"
+python -m pip install pyserial>=3.5
 ```
 
-## Install the wheel directly
+When installing from source, the serial extra can do this automatically:
 
 ```bash
-python3 -m pip install ea_psb10000-0.2.1-py3-none-any.whl
+python -m pip install -e ".[serial]"
 ```
 
-USB/serial support requires `pyserial>=3.5`.
+## Editable source install
 
-## Why version 0.2.1?
+From the driver directory:
 
-Version 0.2.1 is based on the Python-3.8-compatible 0.1.1 driver you were already using. It keeps that public API and removes Python-3.10-only dataclass behavior, while adding the verified SCPI spelling fixes, per-counter alarm queries, complete documented error-code catalog, and the Rev-2 hardware verifier.
+```bash
+python -m pip install -e .
+```
 
-For the least-friction Python 3.8 install, install the wheel directly. Ethernet operation has no third-party runtime dependency.
+## Verify the installed version
+
+```bash
+python -c "import ea_psb10000; print(ea_psb10000.__version__)"
+```
+
+Expected:
+
+```text
+0.2.2
+```
+
+## Run the hardware-free tests
+
+```bash
+python -m pip install -e ".[dev]"
+python -m pytest
+```
+
+## Run the hardware verifier over Ethernet
+
+```bash
+python examples/verify_psb_commands.py --host 192.168.13.17 --verbose --release-remote
+```
+
+## Run the hardware verifier over USB/serial
+
+Windows:
+
+```bat
+py -3.8 examples\verify_psb_commands.py --serial COM5 --verbose --release-remote
+```
+
+Linux:
+
+```bash
+python3.8 examples/verify_psb_commands.py --serial /dev/ttyUSB0 --verbose --release-remote
+```
+
+For a complete command reference, verifier safety flags, SCPI mappings, and usage examples, see `README.md`.

@@ -1,3 +1,8 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: Arbitrary waveform and XY-table configuration/control for the internal function generator.
+
 """Function-generator support verified against EA's SCPI programming guide."""
 
 from __future__ import annotations
@@ -11,10 +16,20 @@ from ..util import ensure_range
 
 
 class FunctionGeneratorSubsystem(Subsystem):
+    """Arbitrary-waveform and XY-table loading/control helpers for the internal function generator."""
+
     def exit(self) -> None:
+        """Exit function-generator mode and return the instrument to normal setpoint control.
+        
+        Underlying SCPI used here: ``FUNC:GEN:SEL NONE``."""
+
         self._write("FUNC:GEN:SEL NONE")
 
     def select_arbitrary(self, target: str) -> None:
+        """Perform the select arbitrary operation.
+        
+        Underlying SCPI used here: ``FUNC:GEN:SEL {value}``, ``FUNC:GEN:SEL``."""
+
         token = target.upper()
         aliases = {"V": "VOLTAGE", "VOLT": "VOLTAGE", "I": "CURRENT", "CURR": "CURRENT"}
         token = aliases.get(token, token)
@@ -33,6 +48,14 @@ class FunctionGeneratorSubsystem(Subsystem):
         verify_each_value: bool = False,
         check_each_write: bool = False,
     ) -> None:
+        """Validate and upload one or more arbitrary-generator sequence records, submit them to
+        the instrument, and optionally verify each data write.
+        
+        Underlying SCPI used here: ``FUNC:GEN:WAVE:STAR {value}``, ``FUNC:GEN:WAVE:END
+        {value}``, ``FUNC:GEN:WAVE:NUM {value}``, ``FUNC:GEN:WAVE:SUBM``,
+        ``FUNC:GEN:WAVE:STAR``, ``FUNC:GEN:WAVE:END``, ``FUNC:GEN:WAVE:NUM``,
+        ``FUNC:GEN:WAVE:LEV {value}``."""
+
         if not 1 <= len(sequences) <= 99:
             raise ValueError("arbitrary generator requires 1..99 sequences")
         if not 0 <= cycles <= 999:
@@ -87,13 +110,26 @@ class FunctionGeneratorSubsystem(Subsystem):
             time.sleep(submit_delay_s)
 
     def run(self) -> None:
+        """Start the configured function-generator waveform.
+        
+        Underlying SCPI used here: ``FUNC:GEN:WAVE:STAT RUN``."""
+
         self._write("FUNC:GEN:WAVE:STAT RUN")
 
     def stop(self) -> None:
+        """Stop the active function-generator waveform.
+        
+        Underlying SCPI used here: ``FUNC:GEN:WAVE:STAT STOP``."""
+
         self._write("FUNC:GEN:WAVE:STAT STOP")
 
     @property
     def state(self) -> str:
+        """Read and return the current function-generator run state from the instrument or
+        driver state.
+        
+        Underlying SCPI used here: ``FUNC:GEN:WAVE:STAT?``."""
+
         return self._query("FUNC:GEN:WAVE:STAT?").strip().upper()
 
     def load_xy(
@@ -105,6 +141,13 @@ class FunctionGeneratorSubsystem(Subsystem):
         submit_delay_s: float = 2.0,
         check_each_write: bool = False,
     ) -> None:
+        """Validate and upload an XY table to the selected function mode, then submit the
+        selected first or second table.
+        
+        Underlying SCPI used here: ``FUNC:GEN:SEL {value}``, ``FUNC:GEN:XY:SEC``,
+        ``FUNC:GEN:XY``, ``FUNC:GEN:XY:SUBM {value}``, ``FUNC:GEN:SEL``,
+        ``FUNC:GEN:XY:SUBM``."""
+
         token = mode.upper()
         if token not in {"FC", "IUPS", "IUEL", "IU", "PV", "PVA", "PVB"}:
             raise ValueError("PSB XY mode must be FC, IUPS, IUEL, IU, PV, PVA, or PVB")

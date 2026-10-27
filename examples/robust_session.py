@@ -1,3 +1,8 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: Long-running ATE-style session example with cleanup, watchdog, and exception handling.
+
 """Example pattern for a long-running ATE/test application."""
 
 from ea_psb10000 import PSB10000, PSBAlarmError, PSBConnectionError, PSBSCPIError

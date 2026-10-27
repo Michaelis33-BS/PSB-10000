@@ -1,3 +1,8 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: Unit tests for core driver behavior.
+
 from __future__ import annotations
 
 import pytest

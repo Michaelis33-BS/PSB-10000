@@ -1,3 +1,8 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: Status/measurement polling example with alarm handling.
+
 import time
 from ea_psb10000 import PSB10000, PSBAlarmError, PSBConnectionError
 

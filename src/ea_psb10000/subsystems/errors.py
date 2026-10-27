@@ -1,8 +1,14 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: SCPI error queue access and the documented error-code catalog.
+
 """SCPI error queue handling and documented error-code catalog."""
 
 from __future__ import annotations
 
 import re
+from typing import Dict, List, Optional
 
 from .base import Subsystem
 from ..exceptions import PSBSCPIError, SCPIErrorRecord
@@ -11,7 +17,7 @@ from ..util import parse_scpi_error
 # EA 10000/20000-series Programming Guide error list.  Keep this centralized so
 # applications and the hardware verifier can test every documented code without
 # deliberately creating dangerous physical faults.
-KNOWN_SCPI_ERRORS: dict[int, str] = {
+KNOWN_SCPI_ERRORS: Dict[int, str] = {
     0: "No error",
     -100: "Command error",
     -102: "Syntax error",
@@ -29,6 +35,8 @@ KNOWN_SCPI_ERRORS: dict[int, str] = {
 
 
 class ErrorSubsystem(Subsystem):
+    """Explicit access to the SCPI error queue. Reading this queue can acknowledge cleared alarms on EA instruments."""
+
     def next(self) -> SCPIErrorRecord:
         """Read/acknowledge the next queue entry."""
         return parse_scpi_error(self._query("SYSTem:ERRor?"))
@@ -37,8 +45,11 @@ class ErrorSubsystem(Subsystem):
         """Equivalent documented NEXT query, useful for command coverage tests."""
         return parse_scpi_error(self._query("SYSTem:ERRor:NEXT?"))
 
-    def drain(self, *, max_errors: int = 16) -> list[SCPIErrorRecord]:
-        result: list[SCPIErrorRecord] = []
+    def drain(self, *, max_errors: int = 16) -> List[SCPIErrorRecord]:
+        """Read successive SCPI error records until code 0 is returned or max_errors is
+        reached. This acknowledges/consumes queue entries."""
+
+        result: List[SCPIErrorRecord] = []
         for _ in range(max_errors):
             record = self.next()
             if not record.is_error:
@@ -46,7 +57,7 @@ class ErrorSubsystem(Subsystem):
             result.append(record)
         return result
 
-    def all(self) -> list[SCPIErrorRecord]:
+    def all(self) -> List[SCPIErrorRecord]:
         """Use SYSTem:ERRor:ALL? and parse its up-to-five returned records."""
         raw = self._query("SYSTem:ERRor:ALL?").strip()
         if not raw:
@@ -63,10 +74,14 @@ class ErrorSubsystem(Subsystem):
         ]
 
     @staticmethod
-    def known_errors() -> dict[int, str]:
+    def known_errors() -> Dict[int, str]:
+        """Return a copy of the driver catalog of documented EA SCPI error codes."""
+
         return dict(KNOWN_SCPI_ERRORS)
 
-    def raise_if_any(self, *, command: str | None = None) -> None:
+    def raise_if_any(self, *, command: Optional[str] = None) -> None:
+        """Drain the SCPI error queue and raise PSBSCPIError if any queued errors are present."""
+
         errors = self.drain()
         if errors:
             raise PSBSCPIError(errors, command=command)

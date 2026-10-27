@@ -1,9 +1,15 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: Instrument interface-monitoring watchdog plus an optional non-mutating host heartbeat.
+
 """Interface-monitoring watchdog and optional host heartbeat."""
 
 from __future__ import annotations
 
 import logging
 from threading import Event, RLock, Thread
+from typing import Optional
 
 from .base import Subsystem
 from ..util import ensure_range
@@ -25,26 +31,42 @@ class WatchdogSubsystem(Subsystem):
     def __init__(self, device) -> None:
         super().__init__(device)
         self._stop_event = Event()
-        self._thread: Thread | None = None
+        self._thread: Optional[Thread] = None
         self._state_lock = RLock()
         self._interval_s = 1.0
-        self._last_error: Exception | None = None
+        self._last_error: Optional[Exception] = None
         self._logger = logging.getLogger("ea_psb10000.watchdog")
 
     @property
     def enabled(self) -> bool:
+        """Read and return the current enabled state from the instrument or driver state.
+        
+        Underlying SCPI used here: ``SYST:COMM:MON:ACT?``."""
+
         return self._query_bool("SYST:COMM:MON:ACT?")
 
     @enabled.setter
     def enabled(self, value: bool) -> None:
+        """Validate and write the enabled state to the instrument.
+        
+        Underlying SCPI used here: ``SYST:COMM:MON:ACT {value}``, ``SYST:COMM:MON:ACT``."""
+
         self._write(f"SYST:COMM:MON:ACT {'ON' if value else 'OFF'}")
 
     @property
     def timeout_s(self) -> int:
+        """Read and return the current timeout s from the instrument or driver state.
+        
+        Underlying SCPI used here: ``SYST:COMM:MON:TIME?``."""
+
         return self._query_int("SYST:COMM:MON:TIME?")
 
     @timeout_s.setter
     def timeout_s(self, value: int) -> None:
+        """Validate and write the timeout s to the instrument.
+        
+        Underlying SCPI used here: ``SYST:COMM:MON:TIME {value}``, ``SYST:COMM:MON:TIME``."""
+
         value = int(ensure_range(value, 1, 36000, "interface monitoring timeout s"))
         self._write(f"SYST:COMM:MON:TIME {value}")
 
@@ -54,7 +76,7 @@ class WatchdogSubsystem(Subsystem):
         enabled: bool,
         timeout_s: int = 5,
         heartbeat: bool = False,
-        heartbeat_interval_s: float | None = None,
+        heartbeat_interval_s: Optional[float] = None,
     ) -> None:
         """Configure instrument monitoring and optionally start a host heartbeat.
 
@@ -82,11 +104,17 @@ class WatchdogSubsystem(Subsystem):
 
     @property
     def heartbeat_running(self) -> bool:
+        """Read and return the current host-heartbeat running state from the instrument or
+        driver state."""
+
         thread = self._thread
         return bool(thread and thread.is_alive())
 
     @property
-    def last_error(self) -> Exception | None:
+    def last_error(self) -> Optional[Exception]:
+        """Read and return the current last heartbeat-thread error from the instrument or
+        driver state."""
+
         return self._last_error
 
     def ping(self) -> int:
@@ -94,6 +122,9 @@ class WatchdogSubsystem(Subsystem):
         return self._query_int("*STB?")
 
     def start_heartbeat(self, interval_s: float = 1.0) -> None:
+        """Start the optional daemon heartbeat thread. The thread only sends *STB? and records
+        the first communication failure."""
+
         interval_s = float(interval_s)
         if interval_s <= 0:
             raise ValueError("interval_s must be > 0")
@@ -110,6 +141,9 @@ class WatchdogSubsystem(Subsystem):
             self._thread.start()
 
     def stop_heartbeat(self, join_timeout_s: float = 2.0) -> None:
+        """Stop and join the optional host heartbeat thread without changing instrument
+        setpoints or output state."""
+
         with self._state_lock:
             thread = self._thread
             if thread is None:

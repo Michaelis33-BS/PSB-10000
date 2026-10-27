@@ -1,3 +1,8 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: High-level device facade, connection lifecycle, SCPI transactions, measurements, and safety checks.
+
 """High-level reusable driver for EA-PSB 10000 bidirectional supplies."""
 
 from __future__ import annotations
@@ -6,7 +11,7 @@ import logging
 import math
 import time
 from threading import RLock
-from typing import Any
+from typing import Any, Optional, Tuple
 
 from .exceptions import (
     PSBAlarmError,
@@ -66,7 +71,7 @@ class PSB10000:
         strict_model: bool = True,
         output_off_on_exit: bool = False,
         release_remote_on_exit: bool = False,
-        logger: logging.Logger | None = None,
+        logger: Optional[logging.Logger] = None,
     ) -> None:
         self.transport = transport
         self.check_errors_after_write = bool(check_errors_after_write)
@@ -77,10 +82,10 @@ class PSB10000:
         self.release_remote_on_exit = bool(release_remote_on_exit)
         self.logger = logger or logging.getLogger("ea_psb10000")
         self._io_lock = RLock()
-        self._info_cache: DeviceInfo | None = None
-        self._ratings_cache: DeviceRatings | None = None
-        self._limit_cache: LimitSnapshot | None = None
-        self._last_alarm_masks: tuple[int, int] = (0, 0)
+        self._info_cache: Optional[DeviceInfo] = None
+        self._ratings_cache: Optional[DeviceRatings] = None
+        self._limit_cache: Optional[LimitSnapshot] = None
+        self._last_alarm_masks: Tuple[int, int] = (0, 0)
 
         self.source = SourceSubsystem(self)
         self.sink = SinkSubsystem(self)
@@ -109,6 +114,9 @@ class PSB10000:
         connect_timeout: float = 5.0,
         **driver_options: Any,
     ) -> "PSB10000":
+        """Construct a PSB10000 instance using the built-in Ethernet/TCP SCPI interface. This
+        only constructs the object; use connect() or a with block to open the socket."""
+
         return cls(
             EthernetTransport(host, port, timeout=timeout, connect_timeout=connect_timeout),
             **driver_options,
@@ -123,10 +131,15 @@ class PSB10000:
         timeout: float = 2.0,
         **driver_options: Any,
     ) -> "PSB10000":
+        """Construct a PSB10000 instance using a serial or USB-COM SCPI connection. pyserial is
+        required for this transport."""
+
         return cls(SerialTransport(port, baudrate=baudrate, timeout=timeout), **driver_options)
 
     @property
     def connected(self) -> bool:
+        """Return True while the underlying transport is open."""
+
         return self.transport.is_open
 
     def connect(self) -> "PSB10000":
@@ -151,6 +164,9 @@ class PSB10000:
     def close(self) -> None:
         # Stop the optional host heartbeat before closing the underlying socket/
         # serial handle so the background thread cannot race transport teardown.
+        """Stop the optional heartbeat and close the underlying transport. This does not
+        silently change the DC terminal unless context-manager cleanup options requested it."""
+
         try:
             self.watchdog.stop_heartbeat()
         finally:
@@ -160,7 +176,7 @@ class PSB10000:
         return self.connect()
 
     def __exit__(self, exc_type, exc, tb) -> None:
-        cleanup_error: Exception | None = None
+        cleanup_error: Optional[Exception] = None
         try:
             if self.connected and self.output_off_on_exit:
                 try:
@@ -201,7 +217,7 @@ class PSB10000:
             self.logger.debug("SCPI < %s", response)
             return response
 
-    def write_scpi(self, command: str, *, check_errors: bool | None = None) -> None:
+    def write_scpi(self, command: str, *, check_errors: Optional[bool] = None) -> None:
         """Send a raw SCPI write and optionally verify the instrument error state.
 
         Before reading SYST:ERR? the driver captures current alarm condition
@@ -276,8 +292,8 @@ class PSB10000:
         voltage = self._query_float("SYST:NOM:VOLT?")
         current = self._query_float("SYST:NOM:CURR?")
         power = self._query_float("SYST:NOM:POW?")
-        rmin: float | None = None
-        rmax: float | None = None
+        rmin: Optional[float] = None
+        rmax: Optional[float] = None
         try:
             rmin = self._query_float("SYST:NOM:RES:MIN?")
             rmax = self._query_float("SYST:NOM:RES:MAX?")
@@ -293,22 +309,35 @@ class PSB10000:
 
     @property
     def info(self) -> DeviceInfo:
+        """Return cached device identification information, querying *IDN? on first access."""
+
         if self._info_cache is None:
             self._info_cache = self._read_identity()
         return self._info_cache
 
     @property
     def ratings(self) -> DeviceRatings:
+        """Return cached nominal voltage/current/power/resistance ratings read from the
+        instrument."""
+
         if self._ratings_cache is None:
             self._ratings_cache = self._read_ratings()
         return self._ratings_cache
 
     def refresh_device_data(self) -> None:
+        """Refresh identity and nominal ratings from hardware and invalidate the cached
+        adjustment limits."""
+
         self._info_cache = self._read_identity()
         self._ratings_cache = self._read_ratings()
         self._limit_cache = None
 
     def acquire_remote(self) -> None:
+        """Request digital remote control and verify that the instrument reports REMOTE
+        ownership.
+        
+        Underlying SCPI used here: ``SYST:LOCK ON``."""
+
         self.write_scpi("SYST:LOCK ON", check_errors=True)
         owner = self.remote_owner_raw()
         if owner != "REMOTE":
@@ -318,20 +347,39 @@ class PSB10000:
 
     def release_remote(self) -> None:
         # Leaving remote can change output state according to device setup.
+        """Release digital remote control and verify that the instrument no longer reports
+        REMOTE ownership. Device configuration determines what happens to the DC terminal
+        after remote is released.
+        
+        Underlying SCPI used here: ``SYST:LOCK OFF``."""
+
         self.write_scpi("SYST:LOCK OFF", check_errors=True)
         owner = self.remote_owner_raw()
         if owner == "REMOTE":
             raise PSBRemoteControlError("Instrument remained in remote control after SYST:LOCK OFF")
 
     def remote_owner_raw(self) -> str:
+        """Return the raw normalized remote-control owner token reported by the PSB.
+        
+        Underlying SCPI used here: ``SYST:LOCK:OWNER?``."""
+
         return self.query_scpi("SYST:LOCK:OWNER?").strip().upper()
 
     def require_remote(self) -> None:
+        """Raise PSBRemoteControlError unless digital remote control is currently owned by this
+        interface."""
+
         owner = self.remote_owner_raw()
         if owner != "REMOTE":
             raise PSBRemoteControlError(f"Operation requires digital remote control; current owner is {owner}")
 
     def measure(self) -> Measurements:
+        """Read voltage, current, and power. MEAS:ARR? is preferred; individual measurement
+        queries are used as a compatibility fallback.
+        
+        Underlying SCPI used here: ``MEAS:ARR?``, ``MEAS:VOLT?``, ``MEAS:CURR?``,
+        ``MEAS:POW?``."""
+
         values = parse_csv_numbers(self.query_scpi("MEAS:ARR?"))
         if len(values) < 3:
             # Fall back to individual queries if a firmware returns an odd array.
@@ -356,11 +404,19 @@ class PSB10000:
         self.sink.current = sink_current
 
     def ping(self) -> bool:
+        """Return True if a non-mutating *IDN? query succeeds; return False on
+        communication/protocol failure.
+        
+        Underlying SCPI used here: ``*IDN?``."""
+
         try:
             return bool(self.query_scpi("*IDN?"))
         except Exception:
             return False
 
     @property
-    def last_alarm_masks_before_error_check(self) -> tuple[int, int]:
+    def last_alarm_masks_before_error_check(self) -> Tuple[int, int]:
+        """Return the QUESTIONABLE and secondary QUESTIONABLE condition masks captured
+        immediately before the most recent automatic SCPI error-queue read."""
+
         return self._last_alarm_masks

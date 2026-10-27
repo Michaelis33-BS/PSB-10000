@@ -1,3 +1,8 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: Public package exports or package-level subsystem/transport exports.
+
 from .analog import AnalogInterfaceSubsystem
 from .communications import CommunicationsSubsystem
 from .diagnostics import DiagnosticsSubsystem

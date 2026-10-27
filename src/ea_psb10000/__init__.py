@@ -1,3 +1,8 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: Public package exports or package-level subsystem/transport exports.
+
 """Reusable Python driver for EA-PSB 10000 series bidirectional DC supplies."""
 
 from .device import PSB10000
@@ -34,7 +39,7 @@ from .models import (
 )
 from .transports import EthernetTransport, SCPITransport, SerialTransport
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 __all__ = [
     "PSB10000",

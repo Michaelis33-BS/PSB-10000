@@ -1,3 +1,8 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: Registration-based access to firmware features whose exact SCPI spellings require local verification.
+
 """2025 HMI features whose current SCPI spellings are not in the supplied manual.
 
 The uploaded 2025 user manual confirms these settings exist, but it explicitly
@@ -11,6 +16,7 @@ guide/firmware revision without editing the driver core.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Dict, Optional, Union
 
 from .base import Subsystem
 from ..exceptions import PSBUnsupportedFeatureError
@@ -19,16 +25,27 @@ from ..util import ensure_range
 
 @dataclass(frozen=True)
 class SettingCommand:
+    """Locally verified set/query SCPI spelling for one firmware extension.
+
+    ``set_command`` is the command header without the value. ``query_command``
+    is optional because some firmware-specific settings may be write-only.
+    """
+
     set_command: str
-    query_command: str | None = None
+    query_command: Optional[str] = None
 
 
 class FirmwareExtensionsSubsystem(Subsystem):
+    """Explicit registry for firmware-specific settings whose command spellings are not verified by this driver revision."""
+
     def __init__(self, device):
         super().__init__(device)
-        self._commands: dict[str, SettingCommand] = {}
+        self._commands: Dict[str, SettingCommand] = {}
 
-    def register(self, name: str, *, set_command: str, query_command: str | None = None) -> None:
+    def register(self, name: str, *, set_command: str, query_command: Optional[str] = None) -> None:
+        """Register a locally verified firmware-specific set/query command pair by a friendly
+        symbolic name. Registration does not transmit anything."""
+
         self._commands[name.lower()] = SettingCommand(set_command, query_command)
 
     def _cmd(self, name: str) -> SettingCommand:
@@ -40,7 +57,9 @@ class FirmwareExtensionsSubsystem(Subsystem):
                 "The 2025 user manual documents the feature but not its digital command syntax."
             ) from exc
 
-    def set_raw_registered(self, name: str, value: str | int | float | bool) -> None:
+    def set_raw_registered(self, name: str, value: Union[str, int, float, bool]) -> None:
+        """Write a value using a previously registered firmware-specific setting command."""
+
         cmd = self._cmd(name)
         if isinstance(value, bool):
             token = "ON" if value else "OFF"
@@ -49,12 +68,18 @@ class FirmwareExtensionsSubsystem(Subsystem):
         self._write(f"{cmd.set_command} {token}")
 
     def query_registered(self, name: str) -> str:
+        """Query a previously registered firmware-specific setting; raises if no query command
+        was registered."""
+
         cmd = self._cmd(name)
         if not cmd.query_command:
             raise PSBUnsupportedFeatureError(f"No query command registered for {name!r}")
         return self._query(cmd.query_command)
 
-    def configure_fast_discharge(self, *, enabled: bool, voltage: float | None = None, current: float | None = None, duration_ms: int | None = None) -> None:
+    def configure_fast_discharge(self, *, enabled: bool, voltage: Optional[float] = None, current: Optional[float] = None, duration_ms: Optional[int] = None) -> None:
+        """Configure validated fast-discharge values through locally registered commands. The
+        driver intentionally supplies no guessed SCPI spelling."""
+
         if voltage is not None:
             ensure_range(voltage, 0.0, self._device.ratings.voltage * 1.02, "fast-discharge voltage")
             self.set_raw_registered("fast_discharge_voltage", voltage)
@@ -67,6 +92,9 @@ class FirmwareExtensionsSubsystem(Subsystem):
         self.set_raw_registered("fast_discharge", enabled)
 
     def configure_actual_value_filter(self, *, mode: str, buffer_size: int) -> None:
+        """Configure actual-value filter mode/buffer through locally registered commands after
+        validating documented values."""
+
         mode = mode.upper()
         if mode not in {"FIXED", "MOVING", "OFF"}:
             raise ValueError("filter mode must be FIXED, MOVING, or OFF")
@@ -75,4 +103,7 @@ class FirmwareExtensionsSubsystem(Subsystem):
         self.set_raw_registered("actual_value_filter_buffer_size", int(buffer_size))
 
     def set_stby_zero_stabilization(self, enabled: bool) -> None:
+        """Enable or disable STBY zero stabilization through a locally registered verified
+        command."""
+
         self.set_raw_registered("stby_zero_stabilization", enabled)

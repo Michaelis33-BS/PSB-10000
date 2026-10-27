@@ -1,6 +1,13 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: TCP/IP SCPI transport for the PSB built-in Ethernet interface.
+
 """Raw TCP/IP SCPI transport for the built-in EA Ethernet interface."""
 
 from __future__ import annotations
+
+from typing import Optional
 
 import socket
 from threading import RLock
@@ -36,15 +43,19 @@ class EthernetTransport(SCPITransport):
         self.terminator = terminator
         self.max_response_bytes = int(max_response_bytes)
         self.tcp_keepalive = bool(tcp_keepalive)
-        self._sock: socket.socket | None = None
+        self._sock: Optional[socket.socket] = None
         self._rx = bytearray()
         self._lock = RLock()
 
     @property
     def is_open(self) -> bool:
+        """Read and return the current is open from the instrument or driver state."""
+
         return self._sock is not None
 
     def open(self) -> None:
+        """Perform the open operation."""
+
         with self._lock:
             if self._sock is not None:
                 return
@@ -61,6 +72,8 @@ class EthernetTransport(SCPITransport):
                 raise PSBConnectionError(f"Could not connect to {self.host}:{self.port}: {exc}") from exc
 
     def close(self) -> None:
+        """Perform the close operation."""
+
         with self._lock:
             sock, self._sock = self._sock, None
             self._rx.clear()
@@ -114,10 +127,14 @@ class EthernetTransport(SCPITransport):
             self._rx.extend(chunk)
 
     def write(self, command: str) -> None:
+        """Perform the write operation."""
+
         with self._lock:
             self._send(command)
 
     def query(self, command: str) -> str:
+        """Perform the query operation."""
+
         with self._lock:
             self._send(command)
             return self._readline()

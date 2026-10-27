@@ -1,3 +1,8 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: Minimal safe Ethernet usage example.
+
 from ea_psb10000 import PSB10000
 
 HOST = "192.168.1.50"

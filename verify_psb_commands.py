@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: Hardware command/readback verifier with status-delta logging, restoration, and error-path testing.
+
 """EA-PSB 10000 command/readback verification utility.
 
 This script exercises the public command surface of the ea_psb10000 driver.
@@ -29,7 +34,7 @@ import time
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 try:
     from ea_psb10000 import PSB10000, ArbitrarySequence
@@ -45,7 +50,7 @@ try:
 except ImportError as exc:  # pragma: no cover - user environment dependent
     raise SystemExit(
         "ea_psb10000 is not installed. Install the driver first, e.g.\n"
-        "  python -m pip install ea_psb10000-0.2.1-py3-none-any.whl\n"
+        "  python -m pip install ea_psb10000-0.2.2-py3-none-any.whl\n"
         "or from the driver source directory:\n"
         "  python -m pip install -e .\n"
     ) from exc
@@ -60,6 +65,8 @@ ERROR = "ERROR"
 
 @dataclass
 class Result:
+    """One normalized verifier result row written to the console, CSV report, and JSON report."""
+
     index: int
     group: str
     name: str
@@ -89,6 +96,8 @@ def clean(value: Any) -> Any:
 
 
 def text(value: Any) -> str:
+    """Return a compact, deterministic text representation for console/CSV output."""
+
     value = clean(value)
     if isinstance(value, (dict, list)):
         return json.dumps(value, sort_keys=True, default=str)
@@ -126,7 +135,7 @@ def lsb_tolerance(nominal: float, *, floor: float, multiplier: float = 3.0) -> f
     return max(float(floor), abs(float(nominal)) / 26214.0 * multiplier)
 
 
-def choose_float(original: float, low: float, high: float) -> float | None:
+def choose_float(original: float, low: float, high: float) -> Optional[float]:
     """Choose a noticeably different value inside [low, high]."""
     low = float(low)
     high = float(high)
@@ -154,14 +163,18 @@ def choose_float(original: float, low: float, high: float) -> float | None:
     return None
 
 
-def choose_int(original: int, low: int, high: int) -> int | None:
+def choose_int(original: int, low: int, high: int) -> Optional[int]:
+    """Choose a different integer inside the requested inclusive range, if possible."""
+
     for candidate in (low, high, (low + high) // 2, original + 1, original - 1):
         if low <= candidate <= high and candidate != original:
             return int(candidate)
     return None
 
 
-def choose_token(original: Any, options: Iterable[Any]) -> Any | None:
+def choose_token(original: Any, options: Iterable[Any]) -> Optional[Any]:
+    """Return the first candidate token that differs from the current value."""
+
     original_text = str(clean(original)).upper()
     for candidate in options:
         if str(clean(candidate)).upper() != original_text:
@@ -170,11 +183,20 @@ def choose_token(original: Any, options: Iterable[Any]) -> Any | None:
 
 
 class CommandVerifier:
+    """Run command groups against one connected PSB and preserve enough context to diagnose failures.
+
+    The verifier is intentionally conservative. Ordinary tests force the DC terminal OFF,
+    read the original setting, write a safe alternate value, query it back, capture the
+    status-register delta, restore the original value, and verify restoration. Potentially
+    disruptive groups require explicit command-line flags. Error-queue isolation is performed
+    around command tests so one stale SCPI error is not incorrectly attributed to the next test.
+    """
+
     def __init__(self, psb: PSB10000, args: argparse.Namespace, transport_kind: str) -> None:
         self.psb = psb
         self.args = args
         self.transport_kind = transport_kind
-        self.results: list[Result] = []
+        self.results: List[Result] = []
         self._index = 0
         self._remote_was = ""
         self._acquired_remote = False
@@ -200,8 +222,8 @@ class CommandVerifier:
         requested: Any = "",
         readback: Any = "",
         restored: Any = "",
-        status_before: dict[str, Any] | None = None,
-        status_after: dict[str, Any] | None = None,
+        status_before: Optional[Dict[str, Any]] = None,
+        status_after: Optional[Dict[str, Any]] = None,
         detail: str = "",
         elapsed_ms: float = 0.0,
     ) -> None:
@@ -234,19 +256,21 @@ class CommandVerifier:
         print(line)
 
     @staticmethod
-    def status_delta(before: dict[str, Any] | None, after: dict[str, Any] | None) -> dict[str, Any]:
+    def status_delta(before: Optional[Dict[str, Any]], after: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Return only status fields whose values changed between two captured snapshots."""
+
         if before is None or after is None:
             return {}
-        delta: dict[str, Any] = {}
+        delta: Dict[str, Any] = {}
         for key in sorted(set(before) | set(after)):
             if before.get(key) != after.get(key):
                 delta[key] = {"before": before.get(key), "after": after.get(key)}
         return delta
 
-    def capture_status(self) -> dict[str, Any]:
+    def capture_status(self) -> Dict[str, Any]:
         """Capture raw status registers plus explicit output/owner state."""
-        data: dict[str, Any] = {}
-        queries: list[tuple[str, Callable[[], Any]]] = [
+        data: Dict[str, Any] = {}
+        queries: List[Tuple[str, Callable[[], Any]]] = [
             ("stb", self.psb.status.status_byte),
             ("questionable", self.psb.status.questionable),
             ("secondary_questionable", self.psb.status.secondary_questionable),
@@ -261,7 +285,7 @@ class CommandVerifier:
                 data[key] = f"<{type(exc).__name__}: {exc}>"
         return data
 
-    def _drain_errors(self) -> tuple[list[Any], str]:
+    def _drain_errors(self) -> Tuple[List[Any], str]:
         """Drain SCPI errors while preserving a useful failure string.
 
         The verifier disables the driver's automatic post-write error check and
@@ -275,12 +299,12 @@ class CommandVerifier:
             return [], f"error-queue read failed: {type(exc).__name__}: {exc}"
 
     @staticmethod
-    def _error_text(errors: list[Any]) -> str:
+    def _error_text(errors: List[Any]) -> str:
         return "; ".join(f"{getattr(e, 'code', '?')}: {getattr(e, 'message', e)}" for e in errors)
 
     def _discard_stale_errors(self) -> str:
         errors, problem = self._drain_errors()
-        parts: list[str] = []
+        parts: List[str] = []
         if errors:
             parts.append(f"discarded stale queue before test: {self._error_text(errors)}")
         if problem:
@@ -297,14 +321,21 @@ class CommandVerifier:
         *,
         check_error_queue: bool = True,
         unsupported_is_skip: bool = False,
-    ) -> Any | None:
+    ) -> Optional[Any]:
+        """Run one read-only command test and isolate any SCPI error it creates.
+
+        ``unsupported_is_skip`` is useful for model/firmware-dependent commands: an
+        unsupported response is recorded as SKIP instead of making the entire checkout
+        look like a hardware failure.
+        """
+
         start = time.perf_counter()
         stale = self._discard_stale_errors() if check_error_queue else ""
         before = self.capture_status()
         try:
             value = getter()
             after = self.capture_status()
-            errors: list[Any] = []
+            errors: List[Any] = []
             queue_problem = ""
             if check_error_queue:
                 errors, queue_problem = self._drain_errors()
@@ -325,7 +356,7 @@ class CommandVerifier:
             self._add(group, name, command, outcome, detail=str(exc), elapsed_ms=(time.perf_counter() - start) * 1000)
         except Exception as exc:
             after = self.capture_status()
-            errors: list[Any] = []
+            errors: List[Any] = []
             queue_problem = ""
             if check_error_queue:
                 errors, queue_problem = self._drain_errors()
@@ -341,6 +372,8 @@ class CommandVerifier:
         return None
 
     def skip(self, group: str, name: str, command: str, why: str) -> None:
+        """Record a deliberately unexecuted command together with the safety/applicability reason."""
+
         self._add(group, name, command, SKIP, detail=why)
 
     def rw_test(
@@ -361,11 +394,11 @@ class CommandVerifier:
         original: Any = ""
         readback: Any = ""
         restored: Any = ""
-        before: dict[str, Any] | None = None
-        after: dict[str, Any] | None = None
+        before: Optional[Dict[str, Any]] = None
+        after: Optional[Dict[str, Any]] = None
         changed_ok = False
         restore_ok = not restore
-        detail_parts: list[str] = []
+        detail_parts: List[str] = []
 
         stale = self._discard_stale_errors()
         if stale:
@@ -454,7 +487,7 @@ class CommandVerifier:
         query_command: str,
         requested: str,
         *,
-        allowed_original: set[str] | None = None,
+        allowed_original: Optional[Set[str]] = None,
     ) -> bool:
         """Use raw SCPI for settings lacking a typed getter."""
         try:
@@ -479,6 +512,8 @@ class CommandVerifier:
 
     # ------------------------------ lifecycle ------------------------------
     def prepare(self) -> None:
+        """Capture initial remote/output state, acquire remote control when needed, and force DC OFF for safe testing."""
+
         print(f"Instrument: {self.psb.info.raw_idn}")
         print(f"Ratings: U={self.psb.ratings.voltage:g} V, I={self.psb.ratings.current:g} A, P={self.psb.ratings.power:g} W")
         self._remote_was = self.psb.remote_owner_raw()
@@ -528,6 +563,8 @@ class CommandVerifier:
             raise RuntimeError("DC terminal did not switch off; refusing to continue with command mutation")
 
     def cleanup(self) -> None:
+        """Best-effort cleanup that leaves the DC terminal OFF and optionally restores remote ownership."""
+
         # Never restore an originally-on output automatically: the verifier may
         # have changed setpoints during the run. Leaving it OFF is safer.
         try:
@@ -546,6 +583,8 @@ class CommandVerifier:
 
     # ------------------------------ command groups ------------------------------
     def test_identification_and_status(self) -> None:
+        """Exercise identity, nominal ratings, measurements, status registers, owner state, and error-queue reads."""
+
         self.query_test("identity", "Identification", "*IDN?", lambda: self.psb.query_scpi("*IDN?"))
         self.query_test("identity", "Nominal voltage", "SYST:NOM:VOLT?", lambda: self.psb.query_scpi("SYST:NOM:VOLT?"))
         self.query_test("identity", "Nominal current", "SYST:NOM:CURR?", lambda: self.psb.query_scpi("SYST:NOM:CURR?"))
@@ -614,9 +653,11 @@ class CommandVerifier:
         self.query_test("error", "All SCPI errors", "SYSTem:ERRor:ALL?", self.psb.errors.all, check_error_queue=False)
 
     def test_setpoints(self) -> None:
+        """Exercise source/sink voltage, current, power, and resistance setpoint write/readback/restore paths."""
+
         r = self.psb.ratings
         lim = self.psb.limits.snapshot(refresh=True)
-        tests: list[tuple[str, str, Callable[[], Any], Callable[[Any], None], float, float]] = [
+        tests: List[Tuple[str, str, Callable[[], Any], Callable[[Any], None], float, float]] = [
             ("Source voltage", "VOLT / VOLT?", lambda: self.psb.source.voltage, lambda v: setattr(self.psb.source, "voltage", v), lim.voltage_min, lim.voltage_max),
             ("Source current", "CURR / CURR?", lambda: self.psb.source.current, lambda v: setattr(self.psb.source, "current", v), lim.source_current_min, lim.source_current_max),
             ("Source power", "POW / POW?", lambda: self.psb.source.power, lambda v: setattr(self.psb.source, "power", v), 0.0, lim.source_power_max),
@@ -648,6 +689,8 @@ class CommandVerifier:
                 self._add("setpoint", name, command, FAIL, detail=f"{type(exc).__name__}: {exc}")
 
     def test_protection(self) -> None:
+        """Exercise programmable OVP/OCP/OPP settings while choosing alternate values that remain non-disruptive."""
+
         r = self.psb.ratings
         tests = [
             ("OVP", "VOLT:PROT / ?", lambda: self.psb.protection.ovp, lambda v: setattr(self.psb.protection, "ovp", v), self.psb.source.voltage, r.voltage * 1.10),
@@ -675,6 +718,8 @@ class CommandVerifier:
                 self._add("protection", name, command, FAIL, detail=f"{type(exc).__name__}: {exc}")
 
     def test_limits(self) -> None:
+        """Exercise adjustment limits without intentionally moving an active setpoint outside the legal range."""
+
         r = self.psb.ratings
         snap = self.psb.limits.snapshot(refresh=True)
         source_v = self.psb.source.voltage
@@ -684,7 +729,7 @@ class CommandVerifier:
         sink_p = self.psb.sink.power
 
         # Each candidate is constrained so it cannot exclude the current setpoint.
-        specs: list[tuple[str, str, Callable[[], Any], Callable[[Any], None], float, float]] = [
+        specs: List[Tuple[str, str, Callable[[], Any], Callable[[Any], None], float, float]] = [
             ("Voltage minimum", "VOLT:LIM:LOW", lambda: self.psb.limits.snapshot(refresh=True).voltage_min, lambda v: self.psb.limits.set_voltage(minimum=v), 0.0, max(0.0, source_v)),
             ("Voltage maximum", "VOLT:LIM:HIGH", lambda: self.psb.limits.snapshot(refresh=True).voltage_max, lambda v: self.psb.limits.set_voltage(maximum=v), min(source_v, r.voltage * 1.02), r.voltage * 1.02),
             ("Source current minimum", "CURR:LIM:LOW", lambda: self.psb.limits.snapshot(refresh=True).source_current_min, lambda v: self.psb.limits.set_source_current(minimum=v), 0.0, max(0.0, source_i)),
@@ -723,6 +768,8 @@ class CommandVerifier:
         self.psb.limits.invalidate()
 
     def test_events(self) -> None:
+        """Exercise user-event thresholds/actions for source and sink paths and restore each original configuration."""
+
         r = self.psb.ratings
         event_specs = [
             (False, "UVD", r.voltage),
@@ -737,7 +784,7 @@ class CommandVerifier:
         for sink, event, nominal in event_specs:
             side = "Sink" if sink else "Source"
             label = f"{side} {event}"
-            original_action: str | None = None
+            original_action: Optional[str] = None
             try:
                 original_action = self.psb.events.get_action(event, sink=sink)
                 # Temporarily disable the action while moving the threshold. This
@@ -778,6 +825,8 @@ class CommandVerifier:
                     pass
 
     def test_system(self) -> None:
+        """Exercise device-wide configuration such as user text, resistance mode, restore behavior, SEMI F47, and controller speed."""
+
         # User text
         try:
             original = self.psb.system.user_text
@@ -826,6 +875,8 @@ class CommandVerifier:
             self.skip("system", "Clear status", "*CLS", "Use --clear-status to allow clearing latched status")
 
     def test_analog(self) -> None:
+        """Exercise analog-interface reference, monitor routing, alarm pins, and REM-SB configuration."""
+
         tests = [
             ("Analog range", "SYSTem:CONFig:ANALog:REFerence", lambda: self.psb.analog.range_volts, lambda v: setattr(self.psb.analog, "range_volts", v), [5, 10]),
             ("Analog monitor", "SYSTem:CONFig:ANALog:MONitor", lambda: self.psb.analog.monitor_mode, lambda v: setattr(self.psb.analog, "monitor_mode", v), ["DEFAULT", "EL", "PS", "ELPS", "PSEL", "COMBINATION"]),
@@ -849,6 +900,8 @@ class CommandVerifier:
         self.raw_rw_test("analog", "Pin 15 routing", "SYSTem:CONFig:ANALog:PIN15", "SYSTem:CONFig:ANALog:PIN15?", "POW", allowed_original={"CONT", "POW"})
 
     def test_communications(self) -> None:
+        """Exercise non-disruptive communication reads by default and gate network/optional-interface writes behind flags."""
+
         # SYSTem:COMMunicate:TIMeout is specifically the inter-byte timeout for
         # serial transfers (USB/RS232). Do not treat it as an Ethernet setting.
         if self.transport_kind == "serial":
@@ -943,7 +996,7 @@ class CommandVerifier:
 
         # Query the built-in LAN (index 2 on 10000-series hardware), then restore
         # which LAN's settings were selected for subsequent SCPI configuration.
-        lan_orig: int | None = None
+        lan_orig: Optional[int] = None
         try:
             self._discard_stale_errors()
             lan_orig = self.psb.communications.lan_index
@@ -1107,6 +1160,8 @@ class CommandVerifier:
         self.skip("optional-if", "CAN read/send base IDs", "SYST:COMM:CAN:*:NODE", "No verified query/readback in the driver; not overwritten automatically")
 
     def test_watchdog(self) -> None:
+        """Read watchdog settings and, when explicitly enabled, verify mutable monitoring/heartbeat behavior."""
+
         self.query_test("watchdog", "Enabled", "SYST:COMM:MON:ACT?", lambda: self.psb.watchdog.enabled)
         self.query_test("watchdog", "Timeout", "SYST:COMM:MON:TIME?", lambda: self.psb.watchdog.timeout_s)
         self.query_test("watchdog", "Ping", "*STB?", self.psb.watchdog.ping)
@@ -1135,6 +1190,8 @@ class CommandVerifier:
                 pass
 
     def test_diagnostics(self) -> None:
+        """Exercise all read-only diagnostic lifetime/runtime/energy counters."""
+
         specs = [
             ("Device class", "SYST:DEV:CLASS?", lambda: self.psb.diagnostics.device_class),
             ("Operation hours", "DIAG:INF:DEV:OTIM?", lambda: self.psb.diagnostics.operation_hours),
@@ -1149,6 +1206,8 @@ class CommandVerifier:
             self.query_test("diagnostics", name, command, getter)
 
     def test_master_slave(self) -> None:
+        """Read master/slave status and gate topology-changing writes/initialization behind explicit flags."""
+
         self.query_test("master-slave", "Enabled", "SYST:MS:ENAB?", lambda: self.psb.master_slave.enabled)
         self.query_test("master-slave", "Role", "SYST:MS:LINK?", lambda: self.psb.master_slave.role)
         self.query_test("master-slave", "Termination", "SYST:MS:TERM?", lambda: self.psb.master_slave.termination)
@@ -1188,6 +1247,8 @@ class CommandVerifier:
             self.skip("master-slave", "Initialize", "SYST:MS:INIT", "Use --master-slave-init; this can affect every unit on an MS bus")
 
     def test_output_toggle(self) -> None:
+        """Optionally verify OUTP ON/OFF only after confirming a benign configuration suitable for energizing the terminal."""
+
         if not self.args.output_toggle:
             self.skip("output", "DC terminal ON/OFF transition", "OUTP ON/OFF", "Use --output-toggle after confirming the DC terminals are safe to energize")
             return
@@ -1241,6 +1302,8 @@ class CommandVerifier:
                 self._add("output", "Restore setpoints after output test", "restore", FAIL, detail=f"{type(exc).__name__}: {exc}")
 
     def test_function_generator(self) -> None:
+        """Optionally upload/run a small function-generator configuration and restore normal mode afterward."""
+
         self.query_test("function-gen", "State", "FUNC:GEN:WAVE:STAT?", lambda: self.psb.function_generator.state)
         if not self.args.function_generator:
             self.skip("function-gen", "Writable function-generator commands", "FUNC:GEN:*", "Use --function-generator; configuring a waveform overwrites the current FG setup")
@@ -1285,14 +1348,14 @@ class CommandVerifier:
         name: str,
         command: str,
         *,
-        expected: set[int] | None = None,
-        restore: Callable[[], None] | None = None,
+        expected: Optional[Set[int]] = None,
+        restore: Optional[Callable[[], None]] = None,
     ) -> None:
         """Send an intentionally invalid, non-energizing command and verify the queue."""
         start = time.perf_counter()
         stale = self._discard_stale_errors()
         before = self.capture_status()
-        write_exc: Exception | None = None
+        write_exc: Optional[Exception] = None
         try:
             self.psb.write_scpi(command, check_errors=False)
             time.sleep(max(0.02, self.args.write_settle))
@@ -1304,7 +1367,7 @@ class CommandVerifier:
         documented = bool(errors) and all(code in KNOWN_SCPI_ERRORS for code in codes)
         matches_expected = expected is None or any(code in expected for code in codes)
         ok = documented and matches_expected and write_exc is None and not queue_problem
-        details: list[str] = []
+        details: List[str] = []
         if stale:
             details.append(stale)
         if expected:
@@ -1339,6 +1402,8 @@ class CommandVerifier:
         )
 
     def test_error_handling(self) -> None:
+        """Verify parser coverage for every documented error code and safely inject selected hardware errors when enabled."""
+
         """Exercise every documented error code plus safe real-instrument injection.
 
         The -999 Safety OVP and other destructive/hard-to-induce conditions are
@@ -1440,10 +1505,14 @@ class CommandVerifier:
             )
 
     def test_firmware_extensions(self) -> None:
+        """Confirm unregistered firmware-extension features fail explicitly instead of guessing unsupported SCPI spellings."""
+
         for name in ("Fast discharge", "Actual-value filter", "STBY zero stabilization"):
             self.skip("extensions", name, "firmware extension", "The 2025 manual documents the feature, but the verified programming-guide revision does not provide an exact SCPI spelling. Register the verified command in psb.extensions before testing it.")
 
     def test_reset(self) -> None:
+        """Optionally issue *RST as a deliberately gated disruptive test."""
+
         if not self.args.reset:
             self.skip("system", "SCPI reset", "*RST", "Use --reset to execute *RST at the very end; it is not automatically reversible")
             return
@@ -1459,6 +1528,8 @@ class CommandVerifier:
             self._add("system", "SCPI reset", "*RST", FAIL, detail=f"{type(exc).__name__}: {exc}")
 
     def run(self) -> None:
+        """Execute the complete verifier sequence, honoring every safety gate from the command line."""
+
         self.prepare()
         try:
             self.test_identification_and_status()
@@ -1481,6 +1552,8 @@ class CommandVerifier:
             self.cleanup()
 
     def write_reports(self) -> None:
+        """Write complete CSV and JSON reports for later review and regression comparison."""
+
         if self.args.csv:
             path = Path(self.args.csv)
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -1502,7 +1575,9 @@ class CommandVerifier:
             path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
             print(f"JSON report: {path}")
 
-    def summary(self) -> dict[str, int]:
+    def summary(self) -> Dict[str, int]:
+        """Return counts of PASS/FAIL/SKIP/INFO/ERROR results for the final console summary."""
+
         counts = {PASS: 0, FAIL: 0, ERROR: 0, SKIP: 0, INFO: 0}
         for item in self.results:
             counts[item.result] = counts.get(item.result, 0) + 1
@@ -1510,6 +1585,8 @@ class CommandVerifier:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line interface, including safety gates for disruptive tests."""
+
     p = argparse.ArgumentParser(
         description="Verify EA-PSB 10000 SCPI commands by write/readback/status/restore.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -1549,6 +1626,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    """Connect to the selected transport, run verification, write reports, and return an exit code."""
+
     args = build_parser().parse_args()
     if args.master_slave_init:
         args.master_slave = True
@@ -1567,7 +1646,7 @@ def main() -> int:
     else:
         psb = PSB10000.serial(args.serial, baudrate=args.baudrate, **options)
 
-    verifier: CommandVerifier | None = None
+    verifier: Optional[CommandVerifier] = None
     try:
         psb.connect()
         verifier = CommandVerifier(psb, args, transport_kind)

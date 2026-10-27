@@ -1,3 +1,8 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: Regression tests for corrected communication command spellings.
+
 from __future__ import annotations
 
 from ea_psb10000 import PSB10000

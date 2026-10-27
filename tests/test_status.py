@@ -1,3 +1,8 @@
+# Writer: Jeff Michaelis
+# Project: EA-PSB 10000 Python Driver
+# Python compatibility: Python 3.8+
+# Purpose: Unit tests for status-register parsing and alarm/status logic.
+
 from ea_psb10000 import PSB10000
 from ea_psb10000.testing import ScriptedTransport
 
